@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains short course materials for **Practical GPU Computing with CuPy**, presented by Jian Tao (Texas A\&M University) on November 11, 2025. The materials guide participants through using CuPy—a GPU-accelerated array library compatible with NumPy/SciPy—for scientific computing, prototyping, and optimization tasks.[^1]
+This repository contains short course materials for **Practical GPU Computing with CuPy**, presented by Jian Tao (Texas A\&M University) on November 11, 2025. The materials guide participants through using CuPy—a GPU-accelerated array library compatible with NumPy/SciPy—for scientific computing, prototyping, and optimization tasks.
 
 ## Course Topics
 
@@ -13,8 +13,6 @@ This repository contains short course materials for **Practical GPU Computing wi
 - Sparse and dense linear algebra using CuPy
 - Advanced GPU programming, including kernel fusion and concurrency
 - 2D convolution pipeline case study
-- Tips for migrating NumPy code to CuPy[^1]
-
 
 ## Getting Started
 
@@ -23,7 +21,7 @@ This repository contains short course materials for **Practical GPU Computing wi
 - NVIDIA GPU (CUDA Compute Capability 3.5+) or AMD GPU (ROCm support)
 - CUDA Toolkit (11.x/12.x) or ROCm runtime
 - Python 3.8+
-- Matching CUDA/ROCm drivers as per CuPy's installation matrix[^1]
+- Matching CUDA/ROCm drivers as per CuPy's installation matrix
 
 
 ### Installation
@@ -63,7 +61,7 @@ module load GCC/12.3.0 OpenMPI/4.1.5 CuPy/13.0.0-CUDA-12.1.1
 
 - [ACES User Guide](https://hprc.tamu.edu/kb/User-Guides/ACES)
 - General support: helphprc@tamu.edu
-- YouTube channel: [Texas A\&M HPRC](https://www.youtube.com/texasamhrpc)[^1]
+- YouTube channel: [Texas A\&M HPRC](https://www.youtube.com/texasamhrpc)
 
 
 ## License
@@ -77,12 +75,4 @@ College of Performance Visualization \& Fine Arts,
 Institute of Data Science,
 Texas A\&M University
 College Station, TX
-
-***
-
-Feel free to customize and add links to your scripts, datasets, or supplementary materials!
-
-<div align="center">⁂</div>
-
-[^1]: Intro_to_CuPy.pdf
 

@@ -1,11 +1,3 @@
-<img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
-
-# I created a github repo for my short course materials. Generate a readme file for the repo.
-
-Below is a ready-to-use README file for your GitHub repo of short course materials. The content is tailored for the course, "Practical GPU Computing with CuPy," based on your provided PDF.
-
-***
-
 # Practical GPU Computing with CuPy
 
 ## Overview

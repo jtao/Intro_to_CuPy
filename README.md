@@ -66,7 +66,7 @@ module load GCC/12.3.0 OpenMPI/4.1.5 CuPy/13.0.0-CUDA-12.1.1
 
 ## License
 
-See the LICENSE file for reuse and distribution terms, or contact the author for more information.
+See the [LICENSE](https://github.com/jtao/Intro_to_CuPy/blob/main/LICENSE) file for reuse and distribution terms, or contact the author for more information.
 
 ## Author
 

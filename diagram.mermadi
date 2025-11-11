@@ -1,0 +1,212 @@
+%% Drop In Replacement
+---
+config:
+  layout: fixed
+---
+flowchart LR
+    A["NumPy Code"] --> B{"Replace Import"}
+    B -- import numpy as np --> C["CPU Execution"]
+    B -- import cupy as cp --> D["GPU Execution"]
+    C --> E["NumPy Array<br>CPU Memory"]
+    D --> F["CuPy Array<br>GPU Memory"]
+    E --> G["Same API:<br>np.array, np.sum,<br>np.dot, etc."]
+    F --> H["Same API:<br>cp.array, cp.sum,<br>cp.dot, etc."]
+    G --> I["Result on CPU"]
+    H --> J["Result on GPU<br>100x+ Speedup"]
+    style A fill:#e1f5ff
+    style C fill:#ffebcc
+    style D fill:#d4edda
+    style J fill:#d4edda
+
+
+%% System Memory
+---
+config:
+  layout: dagre
+---
+flowchart LR
+ subgraph CPU["CPU System Memory"]
+        CPURAM["System RAM"]
+        CPURegister["Resiger"]
+        L1["L1 Cache"]
+        L2["L2 Cache"]
+        L3["L3 Cache"]
+  end
+ subgraph GPU["GPU Card/VRAM"]
+        GPURAM["GPU Global Memory (VRAM)"]
+        SMem["Shared Memory/L1"]
+        GPURegister["Register"]
+  end
+    CPU <--> GPU
+    GPURAM <--> SMem
+    SMem <--> GPURegister
+    L1 <--> L2 & CPURegister
+    L2 <--> L3
+    L3 <--> CPURAM
+
+%% Pinned Memory
+---
+config:
+  layout: dagre
+---
+flowchart LR
+ subgraph CPU["Host (CPU) Memory"]
+        A["Regular Memory (Pageable)"]
+        B["Pinned Memory (Page-Locked)"]
+  end
+ subgraph GPU["GPU Device Memory"]
+        C["GPU Global Memory"]
+  end
+    A <-- Copy (can NOT DMA, slower) --> C
+    B <-- DMA Copy (Fast Transfer) --> C
+     B:::pinned
+    classDef pinned fill:#ffd,stroke:#333,stroke-width:2px
+
+
+%% Composable
+---
+config:
+  layout: elk
+---
+flowchart TB
+ subgraph Traditional["Traditional Configuration"]
+    direction TB
+        T1["Server 1<br>Fixed Resources"]
+        T2["Server 2<br>Fixed Resources"]
+        T3["Server 3<br>Fixed Resources"]
+        T1A["CPU + RAM"]
+        T1B["GPU 1"]
+        T1C["GPU 2"]
+        T1D["Storage"]
+        T2A["CPU + RAM"]
+        T2B["GPU 1"]
+        T2C["GPU 2"]
+        T2D["Storage"]
+        T3A["CPU + RAM"]
+        T3B["GPU 1"]
+        T3C["GPU 2"]
+        T3D["Storage"]
+        TLIM["❌ Static allocation<br>❌ Resource waste<br>❌ Limited scalability"]
+  end
+ subgraph Pools["Resource Pools"]
+    direction LR
+        CPUPOOL["CPU Pool<br>110 Sapphire Rapids"]
+        GPUPOOL["GPU Pool<br>30 NVIDIA H100<br>120 Intel GPU Max 1100<br>4 NVIDIA A30"]
+        STORPOOL["Storage Pool<br>48 Intel Optane SSD<br>2.5 PB Lustre"]
+        ACCPOOL["Accelerator Pool<br>3 Bittware Agilex FPGA<br>2 Intel D5005 FPGA<br>2 NextSilicon"]
+  end
+ subgraph Servers["Dynamically Composed Servers"]
+    direction LR
+        S1["Server A<br>AI Workload"]
+        S2["Server B<br>HPC Simulation"]
+        S3["Server C<br>Data Analytics"]
+  end
+ subgraph Composable["Composable Configuration ACES"]
+    direction TB
+        FABRIC["Liqid Fabric<br>PCIe Gen5 | Ethernet | InfiniBand"]
+        Pools
+        Servers
+        BENEFITS["✅ Dynamic reconfiguration<br>✅ Optimal resource utilization<br>✅ Scale on demand<br>✅ Mixed-resource workflows"]
+  end
+    T1 --> T1A & T1B & T1C & T1D
+    T2 --> T2A & T2B & T2C & T2D
+    T3 --> T3A & T3B & T3C & T3D
+    CPUPOOL -. "Software-Defined" .-> FABRIC
+    GPUPOOL -. "Software-Defined" .-> FABRIC
+    STORPOOL -. "Software-Defined" .-> FABRIC
+    ACCPOOL -. "Software-Defined" .-> FABRIC
+    FABRIC == Compose Resources ==> S1 & S2 & S3
+    style TLIM fill:#ff9999, text-align:left
+    style FABRIC fill:#ffeb99
+    style BENEFITS fill:#99ff99, text-align:left
+    style Traditional fill:#ffe6e6
+    style Composable fill:#e6f3ff
+    style Pools fill:#d4edda
+    style Servers fill:#cce5ff
+
+%% core NumPy functions
+---
+config:
+  layout: dagre
+---
+flowchart LR
+ subgraph Core["Core Functionality"]
+        NDARRAY["ndarray<br>N-dimensional Arrays"]
+        DTYPE["Data Types<br>int, float, complex, bool"]
+        INDEXING["Indexing &amp; Slicing<br>Array Access"]
+        BROADCAST["Broadcasting<br>Shape Manipulation"]
+  end
+ subgraph Creation["Array Creation"]
+        CREATE1["Basic Creation<br>array(), asarray()"]
+        CREATE2["Special Arrays<br>zeros(), ones(), empty()"]
+        CREATE3["Ranges<br>arange(), linspace()"]
+        CREATE4["Random<br>random.rand(), randn()"]
+  end
+ subgraph Math["Mathematical Functions"]
+        ARITH["Arithmetic<br>add, subtract, multiply, divide"]
+        TRIG["Trigonometry<br>sin, cos, tan, arcsin"]
+        EXP["Exponential &amp; Log<br>exp, log, log10, power"]
+        ROUND["Rounding<br>round, floor, ceil, trunc"]
+        UFUNC["Universal Functions<br>Element-wise Operations"]
+  end
+ subgraph LinAlg["Linear Algebra"]
+        MATMUL["Matrix Operations<br>matmul, dot, @"]
+        DECOMP["Decompositions<br>SVD, QR, Cholesky"]
+        EIGEN["Eigenvalues<br>eig, eigvals"]
+        SOLVE["Linear Systems<br>solve, inv, det"]
+        NORM["Norms<br>norm, trace"]
+  end
+ subgraph Stats["Statistics"]
+        BASIC["Basic Stats<br>mean, median, std, var"]
+        MINMAX["Min/Max<br>min, max, argmin, argmax"]
+        PERCENT["Percentiles<br>percentile, quantile"]
+        CORR["Correlation<br>corrcoef, cov"]
+        HIST["Histograms<br>histogram, bincount"]
+  end
+ subgraph Manip["Array Manipulation"]
+        RESHAPE["Shape Changes<br>reshape, flatten, ravel"]
+        TRANS["Transpose<br>transpose, swapaxes"]
+        JOIN["Joining<br>concatenate, stack, hstack"]
+        SPLIT["Splitting<br>split, hsplit, vsplit"]
+        TILE["Repeating<br>tile, repeat"]
+  end
+ subgraph Logic["Logic & Comparison"]
+        COMP["Comparisons<br>&gt;, &lt;, ==, !=, &gt;=, &lt;="]
+        LOGICAL["Logical Ops<br>and, or, not, xor"]
+        WHERE["Conditional<br>where, select, choose"]
+  end
+ subgraph IO["Input/Output"]
+        TEXT["Text Files<br>loadtxt, savetxt"]
+        BINARY["Binary Files<br>save, load, savez"]
+        FORMAT["Formatting<br>tofile, fromfile"]
+  end
+ subgraph Random["Random Generation"]
+        DIST["Distributions<br>normal, uniform, binomial"]
+        PERM["Permutations<br>shuffle, permutation"]
+        CHOICE["Sampling<br>choice, random"]
+  end
+ subgraph FFT["Fourier Transform"]
+        FFT1["FFT Functions<br>fft, ifft, fft2"]
+        FREQ["Frequencies<br>fftfreq, fftshift"]
+  end
+ subgraph Poly["Polynomials"]
+        POLYOP["Operations<br>poly, roots, polyval"]
+        POLYFIT["Fitting<br>polyfit, polyder"]
+  end
+ subgraph Search["Searching & Sorting"]
+        SORT["Sorting<br>sort, argsort, lexsort"]
+        SEARCH["Searching<br>searchsorted, where"]
+        UNIQUE["Unique<br>unique, in1d"]
+  end
+    style Core fill:#FFD43B
+    style Creation fill:#d1ecf1
+    style Math fill:#e6f3ff
+    style LinAlg fill:#d4edda
+    style Stats fill:#fff3cd
+    style Manip fill:#f8d7da
+    style Logic fill:#e7d3ff
+    style IO fill:#ffe6cc
+    style Random fill:#d4edda
+    style FFT fill:#cfe2ff
+    style Poly fill:#f5c6cb
+    style Search fill:#d6d8db

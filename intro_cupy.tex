@@ -1,0 +1,1444 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\usepackage[utf8]{inputenc}
+\usepackage{inconsolata}
+\usepackage{minted}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
+\setminted[python]{frame=lines, fontsize=\footnotesize}
+
+\title{ACES: Introduction to CuPy: NumPy \& SciPy for GPU}
+\subtitle{Practical GPU Computing with CuPy}
+\author[J. Tao]{Jian Tao}
+\institute[Texas A\&M University]{College of Performance Visualization \& Fine Arts,\\Texas A\&M Institute of Data Science,\\Texas A\&M University\\College Station, TX}
+\titlegraphic{\includegraphics[width=2.2cm]{images/tamu-logo.png}}
+\date{Nov 11, 2025}
+
+% TOC at start of each section
+% \AtBeginSection[]{
+%   \begin{frame}{Module Outline}
+%     \tableofcontents[currentsection]
+%   \end{frame}
+% }
+\AtBeginSection[] {
+  \begin{frame}
+    \centering
+    {\Huge Part \insertsectionnumber\ \\
+    \vspace{0.5cm}
+    \insertsectionhead}
+  \end{frame}
+}
+
+\begin{document}
+\logo{\includegraphics[width=1.5cm]{images/cupy_logo_1000px.png}}
+% ─────────────────────────────────────────────────────────────
+% Slide 1: Title
+% ─────────────────────────────────────────────────────────────
+\begin{frame}
+  \titlepage
+  \note{Welcome! Goals: accelerate array workloads via GPU with CuPy; bridge the NumPy ecosystem; master memory management, streams, custom kernels, interop with PyTorch/JAX, and production deployment best practices.}
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 2: Agenda
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Course Agenda}
+  \tableofcontents
+  \note{12 modules, 80 slides total. Mix of theory, hands-on code, profiling patterns, debugging, and advanced topics including DLPack interop and container optimization.}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+\section{CuPy Overview and Philosophy}
+% ═════════════════════════════════════════════════════════════
+\begin{frame}{What is CuPy?}
+
+\href{https://cupy.dev/}{CuPy} is a NumPy/SciPy-compatible GPU array library accelerating computations via \textbf{CUDA} and \textbf{ROCm} backends, offering \textbf{drop-in replacement APIs} for many array operations. It provides ndarray, sparse matrices, and routines with the same API surface as NumPy and SciPy. 
+
+\vspace{0.3cm}
+\textbf{Key goals:}
+\begin{itemize}
+  \item Complete NumPy/SciPy API coverage for drop-in migration 
+  \item Leverage CUDA libraries (cuBLAS, cuFFT, cuSOLVER) for performance 
+  \item Enable advanced CUDA features without deep GPU expertise 
+\end{itemize}
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 4
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Core Design Principle}
+
+\begin{center}
+\includegraphics[width=0.95\textwidth]{images/dropin_replacement.png}   
+\end{center}
+
+\textbf{Drop-in paradigm:} Replace \texttt{numpy} with \texttt{cupy} and \texttt{scipy} with \texttt{cupyx.scipy} to shift compute to GPU with minimal code change when APIs are compatible. 
+
+\vspace{0.3cm}
+This enables rapid prototyping and gradual migration of existing codebases, maintaining familiar syntax while exploiting GPU parallelism for large-scale data processing. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 5
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Hello, CuPy – First Program}
+This mirrors NumPy's syntax but transparently allocates GPU memory and dispatches CUDA kernels for operations. 
+\begin{minted}{python}
+import cupy as cp
+
+# Create array on GPU
+x = cp.arange(6).reshape(2, 3).astype('f')
+# [[0. 1. 2.]
+#  [3. 4. 5.]]
+
+# Reduction along axis 1
+y = x.sum(axis=1)
+print(y)   # array([ 3., 12.], dtype=float32)
+\end{minted}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+\section{Running CuPy on ACES}
+% ═════════════════════════════════════════════════════════════
+
+\begin{frame}{ACES Overview}
+\textbf{ACES}: Accelerating Computing for Emerging Sciences, an \textbf{composable} computational prototype developed by Texas A\&M University.
+\begin{center}
+\includegraphics[width=0.2\textwidth]{images/aces_logo.png}
+\includegraphics[width=0.6\textwidth]{images/aces.jpg}   
+\end{center}
+\end{frame}
+
+\begin{frame}{ACES Configuration}
+Enables mixed-resource workflows optimized for your specific computational needs.
+\begin{center}
+\includegraphics[width=0.8\textwidth]{images/aces_config.png}  
+\end{center}
+\end{frame}
+
+\begin{frame}{ACES System Specifications - Compute}
+\begin{table}
+\begin{tabular}{l|r|l}
+\hline
+\textbf{Component} & \textbf{Quantity} & \textbf{Description} \\
+\hline
+Sapphire Rapids Nodes & 110 nodes & 96 cores, dual Xeon 8468 \\
+ & & 512 GB DDR5 memory \\
+ & & NDR 200 Gbps InfiniBand \\
+\hline
+Ice Lake Nodes & 2 nodes & 64 cores, dual Xeon 8352Y \\
+ & & 512 GB DDR4 memory \\
+\hline
+PCIe Gen4 Infrastructure & 50 nodes & Up to 20 PCIe cards/node \\
+\hline
+PCIe Gen5 Infrastructure & 60 nodes & Up to 16 H100s or 14 PVCs/node \\
+\hline
+Lustre Storage & 2.5 PB & HDR IB connected \\
+\hline
+\end{tabular}
+\end{table}
+\end{frame}
+
+\begin{frame}{ACES Accelerators}
+\begin{table}
+\begin{tabular}{l|r|l}
+\hline
+\textbf{Accelerator} & \textbf{Quantity} & \textbf{Purpose} \\
+\hline
+NVIDIA H100 & 30 & HPC, DL Training, AI \\
+NVIDIA A30 & 4 & AI Inference, Compute \\
+\hline
+Intel PVC GPUs & 120 & HPC, DL Training, AI \\
+\hline
+Graphcore IPUs & 32 & 16 Colossus + 16 Bow \\
+\hline
+Intel PAC D5005 FPGA & 2 & Stratix 10 GX \\
+BittWare IA-840F FPGA & 3 & Agilex AGF027 \\
+\hline
+NextSilicon Coprocessor & 2 & Reconfigurable accelerator \\
+NEC Vector Engine & 8 & Vector computing \\
+Intel Optane SSD & 48 & 18 TB memory-addressable \\
+\hline
+\end{tabular}
+\end{table}
+\end{frame}
+
+\begin{frame}{Accessing ACES}
+\begin{block}{ACES Portal}
+\textbf{URL:} \href{https://portal-aces.hprc.tamu.edu}{portal-aces.hprc.tamu.edu}
+\begin{itemize}
+    \item Web-based interface powered by Open OnDemand 3.0.0
+    \item Single access point for all HPC resources
+    \item Shell access directly in your browser
+\end{itemize}
+\end{block}
+
+\begin{block}{ACCESS Users}
+Available via ACCESS (formerly XSEDE)
+\begin{itemize}
+    \item Login with ACCESS credentials
+    \item Select appropriate Identity Provider
+    \item Consent to attribute release
+\end{itemize}
+\end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Running CuPy on ACES}
+\begin{block}{Step 1: Login to ACES}
+\begin{itemize}
+    \item \textbf{Via Portal:} \textbf{URL:} \href{https://portal-aces.hprc.tamu.edu}{portal-aces.hprc.tamu.edu}
+\end{itemize}
+\end{block}
+
+\begin{block}{Step 2: Load Software Environment}
+\small
+\begin{verbatim}
+module purge
+module load GCC/12.3.0 OpenMPI/4.1.5 CuPy/13.0.0-CUDA-12.1.1
+\end{verbatim}
+\end{block}
+
+\begin{block}{Step 3: Run Sample CuPy Script on GPU Node}
+\small
+\begin{verbatim}
+cp /scratch/training/cupy/CUPY_Examples.tgz $SCRATCH; cd $SCRATCH
+tar -zxvf CUPY_Examples.tgz; cd CUPY_Examples
+python cupy_linalg_example.py
+\end{verbatim}
+\end{block}
+
+\vspace{0.3cm}
+\textbf{Note:} Use \textbf{module spider CuPy} to see all available versions of CuPy on ACES.
+\end{frame}
+
+\begin{frame}[fragile]{Using GPUs with Slurm}
+Sample job script \textbf{cupyjob.sh} for running a CuPy script on one H100 GPU.
+\begin{minted}{python}
+#!/bin/bash
+#SBATCH --job-name=cupy_job
+#SBATCH --time=00:01:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=96
+#SBATCH --mem=488G
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:h100:1
+#SBATCH --output=stdout.%x.%j
+
+module purge
+module load GCC/12.3.0 OpenMPI/4.1.5 CuPy/13.0.0-CUDA-12.1.1
+python my_cupy_script.py
+\end{minted}
+\vspace{0.3cm}
+\textbf{Note:} Use \textbf{sbatch cupyjob.sh} to submit job to ACES.
+\end{frame}
+
+\begin{frame}{Accelerator Access Summary}
+\begin{table}
+\begin{tabular}{l|l}
+\hline
+\textbf{Accelerator} & \textbf{Slurm Partition/Access} \\
+\hline
+NVIDIA H100/A30 & \texttt{--partition=gpu} \\
+ & \texttt{--gres=gpu:h100:N} \\
+\hline
+Intel PVC GPUs & \texttt{--partition=pvc} \\
+\hline
+BittWare FPGA & \texttt{--partition=bittware} \\
+\hline
+Intel Optane SSD & \texttt{--partition=memverge} \\
+\hline
+NextSilicon & \texttt{--partition=nextsilicon} \\
+\hline
+NEC Vector Engine & \texttt{--partition=nec} \\
+\hline
+Graphcore IPUs & Interactive: \texttt{ssh poplar1/poplar2} \\
+\hline
+\end{tabular}
+\end{table}
+\end{frame}
+
+\begin{frame}{Resources and Support}
+\begin{block}{Documentation}
+\begin{itemize}
+    \item ACES User Guide: \texttt{https://hprc.tamu.edu/kb/User-Guides/ACES}
+    \item General HPRC: \texttt{https://hprc.tamu.edu}
+    \item YouTube Channel: \texttt{https://www.youtube.com/texasamhprc}
+\end{itemize}
+\end{block}
+
+\begin{block}{Getting Help}
+\begin{itemize}
+    \item Email: \texttt{help@hprc.tamu.edu} (preferred)
+    \item Phone: (979) 845-0219
+    \item Policies: \texttt{https://hprc.tamu.edu/policies/}
+\end{itemize}
+\end{block}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+\section{Core CuPy Operations and Computing}
+% ═════════════════════════════════════════════════════════════
+
+% ─────────────────────────────────────────────────────────────
+% Slide 9
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Creating Arrays on GPU}
+\texttt{cupy.array} mirrors NumPy's constructor, supporting dtype, order (C/Fortran), and copy flags. CuPy keeps array data in memory along with \textbf{shape}, \textbf{dtype}, and \textbf{strides} attributes. Arrays allocate device (GPU) memory and support asynchronous host-to-device (H2D) transfers when used with streams. 
+
+\vspace{0.3cm}
+\textbf{Options:}
+\begin{itemize}
+  \item \texttt{cp.array(host\_data)} – copy from host NumPy array 
+  \item \texttt{cp.zeros, cp.ones, cp.empty} – initialize directly on GPU 
+  \item \texttt{cp.asarray} – zero-copy view if already CuPy array 
+\end{itemize}
+\end{frame}
+
+\begin{frame}{CPU \& GPU Memory}
+  \begin{columns}
+    % Left column: figure
+    \begin{column}{0.6\textwidth}
+      \centering
+      \includegraphics[width=0.95\linewidth]{images/system_memory.png}
+    \end{column}
+    % Right column: textbox/block
+    \begin{column}{0.35\textwidth}
+      \begin{itemize}
+    \item Memory stores data and programs for fast access.
+    \item \textbf{CPU:} Deep cache, flexible random access.
+    \item \textbf{GPU:} Shallow cache, high bandwidth, optimized for parallel patterns.
+    \item GPU parallelism increases throughput for big data tasks.    
+  \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{CPU/GPU Memory Performance}
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{|l|c|c|c|c|}
+\hline
+\textbf{Memory Type} & \textbf{CPU Latency} & \textbf{CPU Bandwidth} & \textbf{GPU Latency} & \textbf{GPU Bandwidth} \\
+\hline
+Register & $\sim$1 cycle & $\sim$500--1000~GB/s & $\sim$1 cycle & $\sim$10~TB/s \\
+L1 Cache & 4--5 cycles & $\sim$1~TB/s & 20--30 cycles & $\sim$3--4~TB/s \\
+L2 Cache & 12--15 cycles & $\sim$500~GB/s & 100--200 cycles & $\sim$2~TB/s \\
+L3 / Shared L2 & 35--70 cycles & $\sim$200~GB/s & 200--300 cycles & $\sim$1~TB/s \\
+Main/Global Memory & 80--120~ns & $\sim$100~GB/s & 400--800~ns & $\sim$800~GB/s \\
+\hline
+\end{tabular}
+\caption{Typical latency and bandwidth in CPU and GPU memory hierarchies as of Nov 2025. Values are approximate and hardware-dependent.}
+\label{tab:cpu_gpu_memory}
+\end{table}
+
+  \begin{itemize}
+    \item GPU (device) and CPU (host) transfer data over PCIe, which is much slower than onboard memory.
+    \item Minimizing CPU$\leftrightarrow$GPU transfers is critical for performance.
+    \item Techniques like pinned (page-locked) memory can speed up transfers.
+  \end{itemize}
+\end{frame}
+
+
+% ─────────────────────────────────────────────────────────────
+% Slide 10
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{cupy.array Basics and Options}
+\begin{minted}{python}
+import numpy as np
+import cupy as cp
+
+# Host NumPy array
+a = np.arange(8, dtype=np.int32)
+
+# H2D copy to GPU (blocking by default)
+x = cp.array(a, copy=True)
+
+# Direct GPU allocation
+y = cp.zeros((2, 4), dtype=cp.float32, order='C')
+z = cp.ones_like(y, dtype=cp.float64)
+\end{minted}
+
+\vspace{0.2cm}
+H2D copies are synchronous unless wrapped in a stream context; manage stream ordering to prevent data races. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 11
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Dtypes, Byte Order, and Strides}
+CuPy supports all NumPy dtypes (int8–64, float16/32/64, complex64/128, structured). When copying big-endian (rare) NumPy arrays, bytes are swapped to little-endian (common) for GPU compatibility. 
+
+\begin{minted}{python}
+y = cp.zeros((2, 4), dtype=cp.float32, order='C')
+
+print(y.strides)  # (16, 4) for row-major float32
+\end{minted}
+
+\vspace{0.3cm}
+\textbf{Memory order:}
+\begin{itemize}
+  \item \texttt{order='C'} – row-major (default) 
+  \item \texttt{order='F'} – column-major (matches Fortran/MATLAB) 
+\end{itemize}
+
+Stride-aware indexing and broadcasting work identically to NumPy; ensure layout matches downstream kernel expectations for peak memory bandwidth. 
+\end{frame}
+
+\begin{frame}[fragile]{What is Pinned Memory?}
+
+\begin{center}
+\includegraphics[width=0.7\textwidth]{images/pinned_memory.png}   
+\end{center}
+\begin{itemize}
+\item \textbf{Pinned memory} (also called page-locked memory) is host (CPU) memory allocated so that the operating system cannot swap it out to disk.
+\item Special hardware (like a GPU) can access it directly for high-speed transfers without CPU intervention.
+\end{itemize}
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 12
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Pinned Memory for Faster Transfers}
+Pinned (page-locked) memory improves H2D/D2H throughput and enables overlap with compute via streams. 
+
+\begin{minted}{python}
+# Create a pinned memory pool
+pinned_pool = cp.cuda.PinnedMemoryPool()
+cp.cuda.set_pinned_memory_allocator(pinned_pool.malloc)
+
+# Allocate a pinned memory buffer on the host (CPU)
+pinned_mem = cp.cuda.alloc_pinned_memory(400)  # 400 bytes
+
+# Use numpy.frombuffer to create a NumPy array backed by the pinned memory
+arr_cpu = np.frombuffer(pinned_mem, dtype=np.float32, count=100)
+arr_cpu[:] = np.arange(100, dtype=np.float32)   # Fill with data
+
+# Copy to GPU (using the fast path with pinned memory)
+arr_gpu = cp.asarray(arr_cpu)
+\end{minted}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+% \section{NumPy Compatibility and Migration}
+% ═════════════════════════════════════════════════════════════
+
+% ─────────────────────────────────────────────────────────────
+% Slide 13
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Drop-in Replacement Paradigm}
+  \begin{columns}
+    % Left column: figure
+    \begin{column}{0.6\textwidth}
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{|l|l|}
+\hline
+\textbf{NumPy Function} & \textbf{Supported in CuPy?} \\
+\hline
+\texttt{fromfunction} & Partially \\
+\texttt{vectorize} & No \\
+\texttt{piecewise} & No \\
+\texttt{matrix} & No \\
+\texttt{matmul} (object dtype) & No \\
+\texttt{datetime64}, \texttt{timedelta64} & No \\
+\texttt{fft} (irregular shapes) & Partially \\
+\texttt{polyfit}, \texttt{polyval}, \texttt{histogram2d} & No \\
+\texttt{einsum} (complex modes) & Partially \\
+\texttt{char} (string ops) & No \\
+\texttt{ufuncs} (on lists or NumPy arrays) & No \\
+\hline
+\end{tabular}
+\caption{Examples of NumPy functions not supported or only partially supported by CuPy.}
+\end{table}
+    \end{column}
+\begin{column}{0.35\textwidth}
+Most NumPy operations work identically except a few (see Table to the left for some examples).  \\
+\textbf{Automatic dispatch:} CuPy leverages cuBLAS for GEMM, cuFFT for FFT, and cuSOLVER for decompositions, providing performance on par with native CUDA code for standard operations. 
+\end{column}
+\end{columns}
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 14
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Key Behavioral Differences}
+\textbf{Intentional divergences from NumPy:} 
+\begin{itemize}
+  \item Out-of-bounds integer indexing may \textbf{wrap} instead of raising \texttt{IndexError}. Some CuPy functions (like cp.put) let you specify mode='raise' for NumPy-like error handling if needed. 
+  \item Certain dtype promotion rules differ subtly 
+  \item Unsupported: some advanced NumPy features (e.g., \texttt{np.vectorize}, certain string ops) 
+\end{itemize}
+
+\vspace{0.3cm}
+Always test ported code for correctness; consult the differences guide for edge cases before migration; review CuPy’s user guide if your application uses advanced NumPy features. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 15
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Migrating Existing NumPy Code}
+\begin{minted}{python}
+# Before: NumPy on CPU
+import numpy as np
+x = np.random.rand(1000, 1000)
+y = (x - x.mean(axis=0)) / x.std(axis=0)
+u, s, vt = np.linalg.svd(y, full_matrices=False)
+
+# After: CuPy on GPU (identical syntax)
+import cupy as cp
+x = cp.random.rand(1000, 1000)
+y = (x - x.mean(axis=0)) / x.std(axis=0)
+u, s, vt = cp.linalg.svd(y, full_matrices=False)
+# Result stays on GPU; use .get() only when needed
+\end{minted}
+
+\vspace{0.2cm}
+Avoid round-tripping arrays to host in hot loops; keep pipeline GPU-resident for maximum speedup. 
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+% \section{Universal Functions (ufuncs) and Element-wise Ops}
+% ═════════════════════════════════════════════════════════════
+
+% ─────────────────────────────────────────────────────────────
+% Slide 16
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Ufunc Support in CuPy}
+CuPy implements NumPy's universal functions (ufuncs) with full type signature support, \texttt{out} parameters, and methods like \texttt{accumulate}, \texttt{reduce}, \texttt{outer}. 
+\begin{center}
+\includegraphics[width=0.8\textwidth]{images/ufunc.png}   
+\end{center}
+\vspace{0.3cm}
+\textbf{Ufunc methods:} 
+\begin{itemize}
+  \item \texttt{cp.add.reduce(x)} – sum all elements 
+  \item \texttt{cp.add.accumulate(x)} – prefix sum (scan) 
+  \item \texttt{cp.multiply.outer(x, y)} – Cartesian product 
+\end{itemize}
+
+Each method dispatches optimized GPU kernels, exploiting parallelism for large arrays. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 17
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Using Built-in Ufuncs}
+\begin{minted}{python}
+import cupy as cp
+
+x = cp.linspace(-3, 3, 7, dtype=cp.float32)
+
+# Elementwise unary ufunc
+y = cp.tanh(x)
+
+# Reduction via ufunc method
+total = cp.add.reduce(x)
+
+# Prefix sum (inclusive scan)
+cumulative = cp.add.accumulate(x)
+print(cumulative)
+# array([-3., -5., -6., -6., -5., -3.,  0.], dtype=float32)
+\end{minted}
+
+\vspace{0.2cm}
+Ufuncs execute on GPU and support broadcasting; combine with \texttt{out=} to reuse buffers and reduce allocations. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 18
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{cupy.ufunc Class and Metadata}
+The \texttt{cupy.ufunc} object exposes attributes: 
+\begin{itemize}
+  \item \texttt{name} – kernel function name 
+  \item \texttt{nin, nout} – number of input/output arrays 
+  \item \texttt{types} – list of supported dtype signatures 
+\end{itemize}
+
+\vspace{0.3cm}
+Use introspection to verify supported dtypes before dispatching custom ufuncs or when debugging type mismatches. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 19
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Custom Elementwise Ufunc with ElementwiseKernel}
+\begin{minted}{python}
+import cupy as cp
+
+# Define custom ufunc: y = x^2
+square = cp.ElementwiseKernel(
+    'float32 x',        # input
+    'float32 y',        # output
+    'y = x * x;',       # operation (C syntax)
+    'square_f32'        # kernel name
+)
+
+data = cp.arange(8, dtype=cp.float32)
+result = square(data)
+print(result)
+# array([  0.,   1.,   4.,   9.,  16.,  25.,  36.,  49.], dtype=float32)
+\end{minted}
+
+\vspace{0.2cm}
+\texttt{ElementwiseKernel} JIT-compiles CUDA code at first call; subsequent invocations reuse cached kernel. 
+\end{frame}
+
+
+% ─────────────────────────────────────────────────────────────
+% Slide 21
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Reductions and Scans at Scale}
+\begin{minted}{python}
+x = cp.arange(10_000_000, dtype=cp.float32)
+
+# Global reductions (single-pass where possible)
+s = x.sum()
+mn = x.min()
+mx = x.max()
+
+# Prefix sum (inclusive scan via Thrust)
+prefix = cp.cumsum(x)
+
+# Argmax/argmin for index of extrema
+idx = cp.argmax(x)
+\end{minted}
+
+\vspace{0.2cm}
+Large reductions exploit GPU parallelism; CuPy dispatches optimized kernels from Thrust/CUB libraries for peak throughput. 
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+\section{Scientific Computing with GPU-Accelerated Libraries}
+% ═════════════════════════════════════════════════════════════
+% ═════════════════════════════════════════════════════════════
+% \section{Random Number Generation and Statistics}
+% ═════════════════════════════════════════════════════════════
+
+% ─────────────────────────────────────────────────────────────
+% Slide 20
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{GPU Random Number Generation}
+\begin{minted}{python}
+import cupy as cp
+
+# Modern API (NumPy 1.17+ style)
+rng = cp.random.default_rng(seed=123)
+x = rng.normal(loc=0, scale=1, size=(1_000_000,))
+
+# Compute statistics on GPU
+mean = x.mean()
+std = x.std()
+
+# Legacy API still supported
+y = cp.random.rand(1000, 1000)
+\end{minted}
+
+\vspace{0.2cm}
+Random generation uses cuRAND; all operations stay on device. Avoid \texttt{.get()} until final results needed on host. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 22
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Linear Algebra Dispatch}
+CuPy's \texttt{linalg} module leverages: 
+\begin{itemize}
+  \item \textbf{cuBLAS} – matrix multiplication (GEMM), vector operations (BLAS Level 1/2/3) 
+  \item \textbf{cuSOLVER} – LU, QR, SVD, Cholesky decompositions 
+  \item \textbf{Tensor cores} – automatic use of low-precision acceleration (FP16/TF32) on modern GPUs 
+\end{itemize}
+
+\vspace{0.3cm}
+These libraries deliver near-peak FLOPS for standard dense algebra workloads. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 23
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Matrix Operations and Decompositions}
+\begin{minted}{python}
+import cupy as cp
+
+A = cp.random.rand(2048, 2048, dtype=cp.float32)
+B = cp.random.rand(2048, 2048, dtype=cp.float32)
+
+# Matrix multiplication via @ operator (calls cuBLAS GEMM)
+C = A @ B
+
+# Singular value decomposition (thin SVD)
+u, s, vt = cp.linalg.svd(A, full_matrices=False)
+
+# Eigendecomposition, matrix inversion, etc.
+eigvals = cp.linalg.eigvalsh(A @ A.T)  # symmetric
+\end{minted}
+
+\vspace{0.2cm}
+Use \texttt{float32} or mixed precision where acceptable to maximize throughput on tensor cores. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 24
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Batched and Vectorized Operations}
+\begin{minted}{python}
+import cupy as cp
+# Batch of small matrices (100 matrices, 64x64 each)
+X = cp.random.rand(100, 64, 64, dtype=cp.float32)
+
+# Batched inversion (loops internally if no batch API)
+X_inv = cp.linalg.inv(X)
+
+# For large batch counts, consider manual loop with streams
+from cupy.cuda import Stream
+s = Stream()
+with s:
+    for i in range(100):
+        X_inv[i] = cp.linalg.inv(X[i])
+s.synchronize()
+\end{minted}
+
+\vspace{0.2cm}
+Batch operations may loop under the hood; use streams to overlap compute when beneficial. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 39
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Sparse Matrix Support}
+\texttt{cupyx.scipy.sparse} provides GPU-accelerated sparse formats: 
+\begin{itemize}
+  \item CSR (Compressed Sparse Row) – optimized for row slicing, mat-vec 
+  \item COO (Coordinate) – flexible for construction 
+  \item CSC (Compressed Sparse Column) – optimized for column slicing 
+\end{itemize}
+
+\vspace{0.3cm}
+Sparse operations dispatch to cuSPARSE library; efficient for large, sparse linear systems and graph algorithms. 
+\end{frame}
+
+\begin{frame}{CSR (Compressed Sparse Row)}
+Original matrix $A$:
+\[
+A = \begin{pmatrix}
+0 & 0 & 3 \\
+4 & 0 & 0 \\
+0 & 5 & 6
+\end{pmatrix}
+\]
+CSR is best for fast row access and mat-vec operations.
+\begin{itemize}
+  \item Optimized for row slicing and fast matrix-vector multiplication.
+  \item \textbf{Data}: [3, 4, 5, 6]
+  \item \textbf{Indices (column)}: [2, 0, 1, 2]
+  \item \textbf{Indptr (row pointers)}: [0, 1, 2, 4]
+\end{itemize}
+\end{frame}
+
+\begin{frame}{COO (Coordinate Format)}
+Original matrix $A$:
+\[
+A = \begin{pmatrix}
+0 & 0 & 3 \\
+4 & 0 & 0 \\
+0 & 5 & 6
+\end{pmatrix}
+\]
+COO is best for easy construction.
+\begin{itemize}
+  \item Flexible for construction and easy for incremental updates.
+  \item \textbf{Row indices}: [0, 1, 2, 2]
+  \item \textbf{Column indices}: [2, 0, 1, 2]
+  \item \textbf{Data}: [3, 4, 5, 6]
+\end{itemize}
+\end{frame}
+
+\begin{frame}{CSC (Compressed Sparse Column)}
+Original matrix $A$:
+\[
+A = \begin{pmatrix}
+0 & 0 & 3 \\
+4 & 0 & 0 \\
+0 & 5 & 6
+\end{pmatrix}
+\]
+CSC is best for fast column access.
+\begin{itemize}
+  \item Optimized for column slicing and efficient column operations.
+  \item \textbf{Data}: [4, 5, 3, 6]
+  \item \textbf{Row indices}: [1, 2, 0, 2]
+  \item \textbf{Colptr (column pointers)}: [0, 1, 3, 4]
+\end{itemize}
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 40
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Sparse Matrix-Vector Multiply}
+\begin{minted}{python}
+from cupyx.scipy.sparse import csr_matrix
+import cupy as cp
+
+# Construct CSR matrix (3×3, 5 non-zeros)
+A_dense = cp.array([[0, 0, 3], [4, 0, 0], [0, 5, 6]], dtype=cp.float32)
+A = csr_matrix(A_dense)
+
+# Dense vector
+b = cp.arange(3, dtype=cp.float32)
+
+# Sparse mat-vec product (calls cuSPARSE)
+x = A @ b
+print(x)  # array([6., 0., 17.], dtype=float32)
+\end{minted}
+
+\vspace{0.1cm}
+Sparse mat-vec runs on GPU; scales to millions of rows/cols with low density. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 41
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Signal Processing on GPU}
+\texttt{cupyx.scipy.signal} accelerates: 
+\begin{itemize}
+  \item Convolution (direct and FFT-based) 
+  \item Filtering (FIR, IIR design and application) 
+  \item Spectral analysis (periodograms, spectrograms) 
+\end{itemize}
+
+\vspace{0.3cm}
+Useful for image processing, audio DSP, and time-series analysis pipelines requiring high throughput. 
+\end{frame}
+
+
+% ═════════════════════════════════════════════════════════════
+% \section{FFT and SciPy API Coverage}
+% ═════════════════════════════════════════════════════════════
+
+% ─────────────────────────────────────────────────────────────
+% Slide 25
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{FFT Acceleration via cuFFT}
+CuPy's \texttt{cp.fft} module mirrors \texttt{numpy.fft} and dispatches to cuFFT for 1D/2D/nD transforms: 
+\begin{itemize}
+  \item \texttt{cp.fft.fft, rfft, ifft} – complex and real FFTs 
+  \item \texttt{cp.fft.fft2, fftn} – multidimensional transforms 
+  \item \texttt{cp.fft.fftshift, ifftshift} – frequency-domain reordering 
+\end{itemize}
+
+\vspace{0.3cm}
+Large FFTs exploit GPU memory bandwidth; plan caching reduces overhead on repeated calls. 
+\end{frame}
+
+\begin{frame}[fragile]{CuPy FFT Example}
+Compute 1D FFT on GPU with CuPy.
+
+\begin{minted}{python}
+import cupy as cp
+
+# Create a 1D array on the GPU
+a = cp.array([0, 1, 0, 0], dtype=cp.float32)
+
+# Compute its FFT
+fft_a = cp.fft.fft(a)
+
+# Print the result (still on GPU)
+print(fft_a)
+
+# Optionally, bring to CPU for display:
+import numpy as np
+print(cp.asnumpy(fft_a))
+\end{minted}
+\end{frame}
+% ─────────────────────────────────────────────────────────────
+% Slide 26
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{cupyx.scipy – SciPy on GPU}
+\texttt{cupyx.scipy} brings a subset of SciPy functionality to GPU: 
+\begin{itemize}
+  \item \texttt{cupyx.scipy.signal} – convolution, filtering, spectral analysis 
+  \item \texttt{cupyx.scipy.sparse} – sparse matrix formats (CSR, COO, CSC) 
+  \item \texttt{cupyx.scipy.linalg} – extended linear algebra beyond NumPy 
+  \item \texttt{cupyx.scipy.fft} – FFT wrappers (overlaps with \texttt{cp.fft}) 
+\end{itemize}
+
+\vspace{0.3cm}
+Coverage is partial; check documentation for supported functions before porting SciPy-heavy codebases. 
+\end{frame}
+
+\begin{frame}[fragile]{CuPy Signal Processing Example}
+Median filtering with CuPy.
+
+\begin{minted}{python}
+import cupy as cp
+from cupyx.scipy.signal import medfilt
+
+# Create a 1D noisy signal on the GPU
+x = cp.linspace(0, 10, 100)
+signal = cp.sin(x) + 0.5 * cp.random.randn(100)  # Noisy sinusoid
+
+# Apply median filter
+filtered = medfilt(signal, kernel_size=5)
+
+print(filtered)
+\end{minted}
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 27
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{GPU 2D Convolution Example}
+\begin{minted}{python}
+import cupy as cp
+from cupyx.scipy.signal import convolve2d
+
+# Large image (4K×4K)
+img = cp.random.rand(4096, 4096).astype(cp.float32)
+
+# Gaussian-like kernel (31×31 Hanning window)
+kernel = cp.outer(cp.hanning(31), cp.hanning(31))
+kernel /= kernel.sum()  # normalize
+
+# 2D convolution on GPU
+out = convolve2d(img, kernel, mode='same', boundary='wrap')
+
+print(out.shape, out.dtype)
+# (4096, 4096) float32
+\end{minted}
+
+\vspace{0.2cm}
+Convolution mirrors SciPy's API but runs on GPU, leveraging parallel threads for spatial operations. 
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+% \section{Sparse Matrices and Signal Processing}
+% ═════════════════════════════════════════════════════════════
+
+
+% ═════════════════════════════════════════════════════════════
+\section{Advanced GPU Programming and Optimization}
+% ═════════════════════════════════════════════════════════════
+
+\begin{frame}{\textbf{NCCL}: NVIDIA Collective Communication Library}
+\begin{block}{What is NCCL?}
+  \begin{itemize}
+    \item \textbf{NCCL}: NVIDIA Collective Communication Library
+    \item Provides efficient multi-GPU communication for operations like AllReduce, Broadcast, Gather, Scatter
+    \item Optimized for CUDA GPUs\@ and used for large-scale deep learning
+    \item CuPy uses NCCL for distributed array operations on multiple GPUs
+  \end{itemize}
+  \end{block}
+\begin{block}{How Does CuPy Use NCCL?}
+  \begin{itemize}
+    \item CuPy supports NCCL via the \texttt{cupy.cuda.nccl} module
+    \item Enables collective operations (sum, broadcast, etc.) between arrays on different GPUs
+    \item Simple Pythonic API for multi-GPU communication and synchronization
+  \end{itemize}
+\end{block}
+\end{frame}
+
+
+\begin{frame}{NCCL in CuPy}
+\begin{block}{Key NCCL Operations in CuPy}
+  \begin{itemize}
+    \item \textbf{AllReduce}: Sum (or other op) across all participating GPUs, result is distributed back
+    \item \textbf{Broadcast}: Copy data from one GPU to all others
+    \item \textbf{Reduce}: Aggregate data onto a single GPU
+    \item \textbf{AllGather}: Concatenate data from all GPUs and distribute the result
+  \end{itemize}
+\end{block}
+
+\begin{block}{When to Use NCCL with CuPy?}
+  \begin{itemize}
+    \item Multi-GPU deep learning for model/data parallelism
+    \item Large-scale data processing
+    \item Scientific computing that requires fast GPU-to-GPU communication
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Example: NCCL AllReduce in CuPy}
+\begin{minted}{python}
+import cupy as cp
+from cupy.cuda import nccl
+
+# Assume at least two GPUs are available
+size = 2
+rank = 0  # This would be different for each process
+comm_id = nccl.get_unique_id()
+comm = nccl.NcclCommunicator(size, comm_id, rank)
+
+cp.cuda.Device(0).use()
+data = cp.array([1, 2, 3], dtype=cp.float32)
+comm.allReduce(data.data.ptr, data.data.ptr, data.size, nccl.NCCL_FLOAT,
+               nccl.NCCL_SUM, cp.cuda.Stream.null.ptr)
+print(cp.asnumpy(data))
+\end{minted}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+% \section{Memory Management: Pools, Streams, Events}
+% ═════════════════════════════════════════════════════════════
+
+% ─────────────────────────────────────────────────────────────
+% Slide 32
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Memory Pools for Efficient Allocation}
+\begin{minted}{python}
+import cupy as cp
+mp = cp.get_default_memory_pool()
+pp = cp.get_default_pinned_memory_pool()
+
+x = cp.empty((1024, 1024), dtype=cp.float32)
+
+# Inspect pool usage
+print(f"Used: {mp.used_bytes() / 1e6:.2f} MB")
+print(f"Total allocated: {mp.total_bytes() / 1e6:.2f} MB")
+
+# Free unused blocks back to OS
+mp.free_all_blocks()
+\end{minted}
+
+\vspace{0.2cm}
+Memory pools cache allocations to amortize cudaMalloc/cudaFree overhead; monitor usage with \texttt{nvidia-smi} to avoid OOM. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 33
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Streams for Concurrent Kernel Execution}
+\begin{minted}{python}
+import cupy as cp
+s1 = cp.cuda.Stream(non_blocking=True)
+s2 = cp.cuda.Stream(non_blocking=True)
+
+with s1:
+    x = cp.random.rand(1_000_000, dtype=cp.float32)
+    y = cp.sin(x)
+
+with s2:
+    a = cp.random.rand(1_000_000, dtype=cp.float32)
+    b = cp.cos(a)
+
+s1.synchronize()
+s2.synchronize()
+\end{minted}
+\vspace{0.2cm}
+Non-blocking streams enable concurrent kernel launches and overlapping H2D/D2H transfers when hardware permits. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 34
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Events for Device-side Timing}
+\begin{minted}{python}
+import cupy as cp
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+
+start.record()
+# Kernel or computation here
+z = x @ y.reshape(-1, 1)
+end.record()
+end.synchronize()
+
+elapsed_ms = cp.cuda.get_elapsed_time(start, end)
+print(f"Kernel took {elapsed_ms:.3f} ms")
+\end{minted}
+
+\vspace{0.2cm}
+CUDA events measure GPU execution time accurately, avoiding host-side scheduling noise. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 35
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Transfer Patterns and Data Residency}
+\textbf{Best practices:} 
+\begin{itemize}
+  \item Keep data GPU-resident across entire pipeline 
+  \item Batch H2D/D2H transfers; avoid per-iteration copies 
+  \item Use pinned memory for large transfers 
+  \item Overlap transfers with compute via streams 
+\end{itemize}
+
+\vspace{0.3cm}
+Minimizing PCIe traffic is critical; profile with Nsight Systems to identify bottlenecks. 
+\end{frame}
+
+\begin{frame}[fragile]{Device Enumeration and Context}
+\begin{minted}{python}
+import cupy as cp
+
+# Query device count
+n_devices = cp.cuda.runtime.getDeviceCount()
+print(f"Available GPUs: {n_devices}")
+
+# Get current device object
+dev = cp.cuda.Device()
+print(dev.id, dev.compute_capability)
+
+# Inspect device attributes
+attrs = dev.attributes
+print(f"Max threads/block: {attrs['MaxThreadsPerBlock']}")
+print(f"Multiprocessors: {attrs['MultiProcessorCount']}")
+\end{minted}
+
+\vspace{0.2cm}
+Use \texttt{Device} and runtime APIs to inspect hardware capabilities and guide kernel launch configurations. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 42
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{When GPUs Accelerate Workloads}
+\textbf{Ideal use cases:} 
+\begin{itemize}
+  \item Large arrays ($>10^6$ elements) 
+  \item Compute-intensive kernels (high arithmetic intensity) 
+  \item Parallelizable operations (minimal data dependencies) 
+\end{itemize}
+
+\vspace{0.3cm}
+\textbf{Avoid:}
+\begin{itemize}
+  \item Small arrays with frequent H2D/D2H copies 
+  \item Tight Python loops calling single-element ops 
+  \item Algorithms with heavy branching or irregular memory access 
+\end{itemize}
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 43
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{End-to-End Timing with Synchronization}
+\begin{minted}{python}
+import time
+import cupy as cp
+
+# Ensure all prior kernels complete
+cp.cuda.Stream.null.synchronize()
+
+t0 = time.perf_counter()
+
+# Compute workload
+x = cp.random.rand(4096, 4096, dtype=cp.float32)
+y = cp.linalg.svd(x, full_matrices=False)
+
+# Wait for GPU to finish
+cp.cuda.Stream.null.synchronize()
+
+elapsed = time.perf_counter() - t0
+print(f"Elapsed: {elapsed:.3f} s")
+\end{minted}
+
+\vspace{0.1cm}
+Always synchronize before/after timing; kernel launches are asynchronous by default. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 44
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{cupyx.profiler.benchmark Utility}
+\begin{minted}{python}
+from cupyx.profiler import benchmark
+
+def my_func(a, b):
+    return 3 * cp.sin(-a) * b
+
+a = 0.5 - cp.random.rand(10000)
+b = cp.random.rand(10000)
+
+# Run n_repeat times; report CPU/GPU time
+result = benchmark(my_func, (a, b), n_repeat=1000, n_warmup=10)
+
+print(result)
+\end{minted}
+
+\vspace{0.1cm}
+\texttt{benchmark} automates timing with warm-up, synchronization, and statistics collection. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 45
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Kernel Fusion and Launch Overhead}
+\textbf{Problem:} Small kernels suffer from launch latency ($\sim$5--10 $\mu s$ per launch). 
+
+\vspace{0.3cm}
+\textbf{Solutions:} 
+\begin{itemize}
+  \item Fuse multiple elementwise ops into single \texttt{ElementwiseKernel} 
+  \item Batch inputs to process multiple arrays per launch 
+  \item Use vectorized CuPy expressions that auto-fuse where supported 
+\end{itemize}
+
+\vspace{0.3cm}
+Fusion reduces memory traffic and kernel count; critical for bandwidth-bound workloads. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 46
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Bandwidth vs Compute Bound Analysis}
+\textbf{Bandwidth-bound:} Memory transfer time dominates compute. 
+\begin{itemize}
+  \item Optimize: reduce data movement, fuse kernels, increase arithmetic intensity 
+\end{itemize}
+
+\vspace{0.3cm}
+\textbf{Compute-bound:} ALU utilization limits throughput. 
+\begin{itemize}
+  \item Optimize: use lower precision (FP16/TF32), exploit tensor cores 
+\end{itemize}
+
+\vspace{0.3cm}
+Profile with Nsight Compute to measure achieved bandwidth and FLOPS vs theoretical peak. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 47
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Streams and Concurrency for Overlap}
+Multiple streams enable: 
+\begin{itemize}
+  \item Concurrent kernel execution (independent data) 
+  \item Overlapping H2D transfers with compute 
+  \item Overlapping D2H copies with next iteration's compute 
+\end{itemize}
+
+\vspace{0.3cm}
+Requires careful synchronization (events/barriers) to avoid data races; test with CUDA memcheck. 
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════
+\section{Case Study: 2D Convolution Pipeline}
+% ═════════════════════════════════════════════════════════════
+
+% ─────────────────────────────────────────────────────────────
+% Slide 48
+% ─────────────────────────────────────────────────────────────
+\begin{frame}{Convolution Case Study Overview}
+\textbf{Goal:} Accelerate 2D image convolution on 4K×4K images using GPU. 
+
+\vspace{0.3cm}
+\textbf{Steps:} 
+\begin{enumerate}
+  \item Allocate data directly on GPU 
+  \item Apply convolution via \texttt{cupyx.scipy.signal} 
+  \item Measure timing with CUDA events 
+  \item Compare to CPU SciPy baseline for validation 
+\end{enumerate}
+
+This workflow demonstrates end-to-end GPU pipeline with minimal host interaction. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 49
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Preparing Data on GPU}
+\begin{minted}{python}
+import cupy as cp
+
+# Create sparse input (Dirac comb) on GPU
+diracs = cp.zeros((4096, 4096), dtype=cp.float32)
+diracs[::512, ::512] = 1.0
+
+# 2D Gaussian-like kernel (31×31 Hanning window)
+gauss = cp.outer(cp.hanning(31), cp.hanning(31))
+gauss /= gauss.sum()  # normalize to unit sum
+\end{minted}
+
+\vspace{0.2cm}
+Allocate arrays directly on device; avoid copying from host to maintain GPU residency. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 50
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Running GPU Convolution with Timing}
+\begin{minted}{python}
+from cupyx.scipy import signal
+
+t0 = cp.cuda.Event()
+t1 = cp.cuda.Event()
+
+t0.record()
+blur = signal.convolve2d(diracs, gauss, mode='same', boundary='wrap')
+t1.record()
+t1.synchronize()
+
+elapsed_ms = cp.cuda.get_elapsed_time(t0, t1)
+print(f"GPU convolution: {elapsed_ms:.2f} ms")
+\end{minted}
+
+\vspace{0.2cm}
+CUDA events measure kernel execution time independently of Python GIL or host scheduling. 
+\end{frame}
+
+
+% ═════════════════════════════════════════════════════════════
+\section{Appendix}
+% ═════════════════════════════════════════════════════════════
+\begin{frame}
+  \centering
+  \vspace{0.4cm}
+  {\Large \href{https://docs.google.com/forms/d/e/1FAIpQLSensgCZI15u9jwKR7wGL1c59BTojSJK3fwwKXHLLrONviKRFw/viewform}{HPRC Survey}}
+  \vspace{0.2cm}
+ \begin{center}
+\includegraphics[width=0.3\textwidth]{images/hprc_survey.png}   
+\end{center}
+\end{frame}
+
+
+
+\begin{frame}{Hardware and Software Requirements for CuPy}
+\textbf{Prerequisites:}
+\begin{itemize}
+  \item NVIDIA GPU with CUDA Compute Capability $\geq$ 3.5 or AMD GPU with ROCm support 
+  \item CUDA Toolkit (11.x/12.x) or ROCm runtime 
+  \item Python 3.8+ and pip for wheel installation 
+\end{itemize}
+
+\vspace{0.3cm}
+Ensure drivers match toolkit versions; consult CuPy's installation matrix for exact compatibility before selecting wheels. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 7
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Installation Quick Start}
+Ensure the installed CuPy package matches your CUDA or ROCm version—mismatches can lead to import failures or runtime errors.
+\begin{minted}{python}
+# For CUDA 11.2 ~ 11.x
+pip install cupy-cuda11x
+# For CUDA 12.x
+pip install cupy-cuda12x
+# For CUDA 13.x
+pip install cupy-cuda13x
+# For AMD ROCm 4.3
+pip install cupy-rocm-4-3
+# For AMD ROCm 5.0
+pip install cupy-rocm-5-0
+# Verify installation
+python -c "import cupy; print(cupy.__version__)"
+\end{minted}
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 28
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{ElementwiseKernel for Fused Operations}
+\begin{minted}{python}
+scale_bias = cp.ElementwiseKernel(
+    'float32 x, float32 s, float32 b',  # inputs
+    'float32 y',                         # output
+    'y = s * x + b;',                    # C++ operation
+    'scale_bias'                         # name
+)
+
+data = cp.arange(8, dtype=cp.float32)
+result = scale_bias(data, 0.5, 1.0)
+# result = 0.5 * data + 1.0
+print(result)
+# array([1. , 1.5, 2. , 2.5, 3. , 3.5, 4. , 4.5], dtype=float32)
+\end{minted}
+
+\vspace{0.2cm}
+Fuses scalar arithmetic into single kernel launch; reduces memory traffic vs chaining separate ufuncs. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 29
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{RawKernel for Full CUDA Control}
+\begin{minted}{python}
+code = r'''
+extern "C" __global__
+void saxpy(const float* x, const float* y, float* z,
+           float a, int n) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < n) z[i] = a * x[i] + y[i];
+}'''
+saxpy = cp.RawKernel(code, 'saxpy')
+n = 1 << 20  # 1M elements
+x = cp.random.rand(n, dtype=cp.float32)
+y = cp.random.rand(n, dtype=cp.float32)
+z = cp.empty(n, dtype=cp.float32)
+# Launch with grid/block dimensions
+blk = 256
+grd = (n + blk - 1) // blk
+saxpy((grd,), (blk,), (x, y, z, cp.float32(2.0), n))
+\end{minted}
+
+\vspace{0.1cm}
+\texttt{RawKernel} JIT-compiles CUDA C++; cached per device for reuse. 
+\end{frame}
+
+% ─────────────────────────────────────────────────────────────
+% Slide 30
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{RawKernel with Shared Memory Reduction}
+\begin{minted}{python}
+code = r'''
+extern "C" __global__
+void block_sum(const float* x, float* out, int n) {
+    extern __shared__ float sdata[];
+    int tid = threadIdx.x;
+    int i = blockIdx.x * blockDim.x + tid;
+    sdata[tid] = (i < n) ? x[i] : 0.0f;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) sdata[tid] += sdata[tid + s];
+        __syncthreads();
+    }
+    if (tid == 0) out[blockIdx.x] = sdata[0];
+}'''
+kernel = cp.RawKernel(code, 'block_sum')
+# Launch with shared memory size (3rd arg to __call__)
+\end{minted}
+
+\vspace{0.1cm}
+Shared memory tiling reduces global memory accesses; critical for bandwidth-bound reductions. 
+\end{frame}
+
+
+% ─────────────────────────────────────────────────────────────
+% Slide 31 (NEW)
+% ─────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{RawModule for Multiple Kernels}
+\begin{minted}{python}
+code = r'''
+extern "C" __global__ void kernel_a(float* x, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) x[i] *= 2.0f;
+}
+extern "C" __global__ void kernel_b(float* x, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) x[i] += 1.0f;
+}'''
+mod = cp.RawModule(code=code)
+ka = mod.get_function('kernel_a')
+kb = mod.get_function('kernel_b')
+
+x = cp.ones(1024, dtype=cp.float32)
+ka((4,), (256,), (x, 1024))  # x *= 2
+kb((4,), (256,), (x, 1024))  # x += 1
+print(x[:5])  # [3. 3. 3. 3. 3.]
+\end{minted}
+
+\vspace{0.1cm}
+\texttt{RawModule} compiles once; retrieve multiple kernels from the same source. 
+\end{frame}
+
+\end{document}
